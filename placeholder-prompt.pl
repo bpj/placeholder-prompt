@@ -46,7 +46,7 @@ use Encode qw[find_encoding];
 use Path::Tiny qw[path];
 use IO::Prompt::Tiny qw[prompt];
 
-my $version = '20201118';
+my $version = '202011182130';
 
 sub error;
 
@@ -65,6 +65,7 @@ my %default = (
   right_delimiter => '>',
   key_regex => '\w+',
   prompt_default => 1,
+  prompt_echo => 1,
   term_encoding => $term_encoding,
 );
 
@@ -77,12 +78,16 @@ DESCRIPTION
 -----------
 
 This program loops through all lines of an input file looking for
-placeholders (by default of the form "\$<WORD>") prompting you for
+placeholders (by default of the form `\$<WORD>`) prompting you for
 a replacement text, optionally showing the previously given value,
 if any, as a default answer, and optionally preloading defaults
 from a YAML or JSON file and/or saving collected values to a YAML file.
+
 You can override an existing default by prefixing your replacement
 value with a "+" at the prompt.
+
+You can abort (leaving any files unchanged) by typing `:a` or
+`:q` at the prompt.
 
 OPTIONS
 -------
@@ -96,15 +101,16 @@ ENVIRONMENT
 You can set your own defaults for some options by defining the
 following enviroment variables (defaults shown in parentheses):
 
-  - PH_PROMPT_INPUT_FILE ($default{input_file})
-  - PH_PROMPT_KEY_REGEX ($default{key_regex})
-  - PH_PROMPT_LEFT_DELIMITER ($default{left_delimiter})
-  - PH_PROMPT_LOAD_DATA ($default{load_data})
-  - PH_PROMPT_OUTPUT_FILE ($default{output_file})
-  - PH_PROMPT_PROMPT_DEFAULT ($default{prompt_default})
-  - PH_PROMPT_RIGHT_DELIMITER ($default{right_delimiter})
-  - PH_PROMPT_SAVE_DATA ($default{save_data})
-  - PH_PROMPT_TERM_ENCODING ($default{term_encoding})
+    - PH_PROMPT_INPUT_FILE ($default{input_file})
+    - PH_PROMPT_KEY_REGEX ($default{key_regex})
+    - PH_PROMPT_LEFT_DELIMITER ($default{left_delimiter})
+    - PH_PROMPT_LOAD_DATA ($default{load_data})
+    - PH_PROMPT_OUTPUT_FILE ($default{output_file})
+    - PH_PROMPT_PROMPT_DEFAULT ($default{prompt_default})
+    - PH_PROMPT_PROMPT_ECHO ($default{prompt_echo})
+    - PH_PROMPT_RIGHT_DELIMITER ($default{right_delimiter})
+    - PH_PROMPT_SAVE_DATA ($default{save_data})
+    - PH_PROMPT_TERM_ENCODING ($default{term_encoding})
 
 DEPENDENCIES
 ------------
@@ -173,7 +179,7 @@ my ( $opt, $usage ) = describe_options(
     opt_default('prompt_default'),
   ],
   [ 'no-prompt-default|D',
-    "Don't prompt for a replacement for known keys.",
+    "Do not prompt for a replacement for known keys.",
     +{ implies => +{ prompt_default => 0 }, },
   ],
   [ 'term-encoding|e=s',
@@ -200,6 +206,14 @@ my ( $opt, $usage ) = describe_options(
     opt_default('output_file'),
   ],
   [ 'options|O' => "Show options help only.", +{ shortcircuit => 1 }, ],
+  [ 'prompt-echo|p',
+    "Echo the line containing the placeholder when prompting.",
+    opt_default('prompt_echo'),
+  ],
+  [ 'no-prompt-echo|E|P',
+    "Do not echo the line containing the placeholder when prompting.",
+    +{ implies => +{ prompt_echo => 0 } },
+  ],
   [ 'right-delimiter|R=s', "Right delimiter for placeholders.",
     opt_default('right_delimiter'),
   ],
@@ -216,7 +230,7 @@ my ( $opt, $usage ) = describe_options(
 );
 
 if ( $opt->help ) {
-  say $usage->leader_text;
+  say q{ } x 4, $usage->leader_text;
   say $usage_text{pre_text};
   say $usage->option_text;
   say $usage_text{post_text};
@@ -240,8 +254,6 @@ my($input_name) = undef_opt($opt->input_file);
 ($input_name) = @ARGV unless defined $input_name;
 $output_name // error 'Output file name required';
 $input_name // error 'Input file name required';
-my $input = path($input_name)->openr_utf8;
-my $output = path($output_name)->openw_utf8;
 
 
 my $data = +{};
@@ -262,20 +274,47 @@ my $regex = do {
 };
 
 my $prompt_default = $enc->decode($opt->prompt_default);
+my $prompt_echo = $enc->decode($opt->prompt_echo);
 
-while (<$input>) {
-  my $line = my $text = $_;
-  $text =~ s{$regex}{
-    prompt_replace($line, $1, $data, $prompt_default);
+my @lines = path($input_name)->lines_utf8;
+
+for my $line ( @lines ) {
+  my $text = $line;
+  $line =~ s{$regex}{
+    prompt_replace($text, $1, $data, $prompt_default,$prompt_echo);
   }ge;
-  print $output $text;
 }
 
-close $input;
-close $output;
+if ($input_name eq $output_name) {
+  my $name = $enc->decode($output_name);
+  my $write = prompt_yn("Really overwrite $name?", 0);
+  if ( $write ) {
+    say $enc->encode("Overwriting $name");
+    path($output_name)->spew_utf8(\@lines);
+  }
+  else {
+    say $enc->encode("Discarding changes");
+  }
+}
+else {
+  path($output_name)->spew_utf8(\@lines);
+}
 
 if ( my $fn = undef_opt($opt->save_data) ) {
-  ypp()->dump_file($fn, $data);
+  if ( ($opt->load_data // "") eq $fn ) {
+    my $name = $enc->decode($fn);
+    my $write = prompt_yn("Really overwrite data in $name?", 0);
+    if ( $write ) {
+      say $enc->encode("Overwriting data in $name");
+      ypp()->dump_file($fn, $data);
+    }
+    else {
+      say $enc->encode("Discarding data changes");
+    }
+  }
+  else {
+    ypp()->dump_file($fn, $data);
+  }
 }
 
 sub error {
@@ -308,17 +347,36 @@ sub ypp {
   return $ypp;
 }
 
+sub prompt_yn {
+  state $yes_or_no = '(y[es]/n[o])';
+  state $yes = $enc->encode('y');
+  state $no = $enc->encode('n');
+  my($prompt, $default) = @_;
+  $prompt = $enc->encode("$prompt $yes_or_no");
+  $default = $default ? $yes : $no;
+  my $answer = "";
+  while ($answer !~ m{^(?:y(?:es)?|no?)$}i ) {
+    $answer = prompt $prompt, $default;
+    $answer //= "";
+    $answer = $enc->decode($answer);
+  }
+  return $answer =~ m{^y}i;
+}
+
 sub prompt_replace {
-  my($line, $key, $data, $prompt_default) = @_;
+  my($line, $key, $data, $prompt_default, $prompt_echo) = @_;
   my $val = $data->{$key};
   if ( $prompt_default or !defined($val) ) {
     my $prompt_key = $enc->encode("$key:");
     my $prompt_default = defined($val) ? $enc->encode($val) : undef;
-    print $enc->encode($line);
+    print $enc->encode($line) if $prompt_echo;
     my $answer = prompt $prompt_key, $prompt_default;
     if ( defined $answer ) {
       $answer = $enc->decode($answer);
-      if ( $answer =~ s{^\+}{} ) {
+      if ( $answer =~ m{^\:[aq]$}) {
+        exit if prompt_yn('Really abort?', 0);
+      }
+      elsif ( $answer =~ s{^\+}{} ) {
         $val = $data->{$key} = $answer;
       }
       else {

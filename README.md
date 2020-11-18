@@ -1,7 +1,7 @@
 placeholder-prompt.pl
 =====================
 
-    perl placeholder-prompt.pl [-DdehiKLlOoRsYy] [long options...] <filename>
+    perl placeholder-prompt.pl [-DdEehiKLlOoPpRsvYy] [long options...] <filename>
 
 placeholder-prompt.pl - Interactively fill in placeholders in a text file
 
@@ -9,12 +9,16 @@ DESCRIPTION
 -----------
 
 This program loops through all lines of an input file looking for
-placeholders (by default of the form ` "$<WORD>"`) prompting you for
+placeholders (by default of the form `$<WORD>`) prompting you for
 a replacement text, optionally showing the previously given value,
 if any, as a default answer, and optionally preloading defaults
 from a YAML or JSON file and/or saving collected values to a YAML file.
+
 You can override an existing default by prefixing your replacement
 value with a "+" at the prompt.
+
+You can abort (leaving any files unchanged) by typing `:a` or
+`:q` at the prompt.
 
 OPTIONS
 -------
@@ -22,7 +26,7 @@ OPTIONS
 	-d --prompt-default            Prompt for a replacement for known
 	                               keys.
 	                               (default value: 1)
-	-D --no-prompt-default         Don't prompt for a replacement for
+	-D --no-prompt-default         Do not prompt for a replacement for
 	                               known keys.
 	-e STR --term-encoding STR     Terminal encoding. (Usually found
 	                               automatically.)
@@ -41,10 +45,16 @@ OPTIONS
 	-o STR --output-file STR       Path to the output file.
 	                               (default value: (undef))
 	-O --options                   Show options help only.
+	-p --prompt-echo               Echo the line containing the
+	                               placeholder when prompting.
+	                               (default value: 1)
+	-P -E --no-prompt-echo         Do not echo the line containing the
+	                               placeholder when prompting.
 	-R STR --right-delimiter STR   Right delimiter for placeholders.
 	                               (default value: >)
 	-s STR -Y STR --save-data STR  Name of YAML file to save data to.
 	                               (default value: (undef))
+	-v --version                   Show the program version.
 
 
 ENVIRONMENT
@@ -59,6 +69,7 @@ following enviroment variables (defaults shown in parentheses):
     - PH_PROMPT_LOAD_DATA (undef)
     - PH_PROMPT_OUTPUT_FILE (undef)
     - PH_PROMPT_PROMPT_DEFAULT (1)
+    - PH_PROMPT_PROMPT_ECHO (1)
     - PH_PROMPT_RIGHT_DELIMITER (>)
     - PH_PROMPT_SAVE_DATA (undef)
     - PH_PROMPT_TERM_ENCODING (utf-8)
