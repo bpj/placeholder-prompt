@@ -46,7 +46,7 @@ use Encode qw[find_encoding];
 use Path::Tiny qw[path];
 use IO::Prompt::Tiny qw[prompt];
 
-my $version = '202011182130';
+my $version = '202011182230';
 
 sub error;
 
@@ -370,11 +370,13 @@ sub prompt_replace {
     my $prompt_key = $enc->encode("$key:");
     my $prompt_default = defined($val) ? $enc->encode($val) : undef;
     print $enc->encode($line) if $prompt_echo;
-    my $answer = prompt $prompt_key, $prompt_default;
-    if ( defined $answer ) {
+    my $answer;
+    until ( defined $answer ) {
+      $answer = prompt $prompt_key, $prompt_default;
       $answer = $enc->decode($answer);
       if ( $answer =~ m{^\:[aq]$}) {
         exit if prompt_yn('Really abort?', 0);
+        $answer = undef;
       }
       elsif ( $answer =~ s{^\+}{} ) {
         $val = $data->{$key} = $answer;
