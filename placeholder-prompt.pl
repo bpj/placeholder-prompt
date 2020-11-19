@@ -44,10 +44,11 @@ use Carp qw[confess];
 use Getopt::Long::Descriptive;
 use Term::Encoding qw[term_encoding];
 use Encode qw[find_encoding];
+use charnames qw[:full :short];
 use Path::Tiny qw[path];
 use IO::Prompt::Tiny qw[prompt];
 
-my $version = '202011191140';
+my $version = '202011191230';
 
 sub error;
 
@@ -297,14 +298,14 @@ if ( my $fn = undef_opt($opt->load_data) ) {
 }
 
 my $regex = do {
-  my $left = quotemeta $enc->decode($opt->left_delimiter);
-  my $right = quotemeta $enc->decode($opt->right_delimiter);
-  my $key = $enc->decode($opt->key_regex);
+  my $left = quotemeta term_decode($opt->left_delimiter);
+  my $right = quotemeta term_decode($opt->right_delimiter);
+  my $key = term_decode($opt->key_regex);
   qr/$left($key)$right/;
 };
 
-my $prompt_default = $enc->decode($opt->prompt_default);
-my $prompt_echo = $enc->decode($opt->prompt_echo);
+my $prompt_default = term_decode($opt->prompt_default);
+my $prompt_echo = term_decode($opt->prompt_echo);
 
 my @lines = path($input_name)->lines_utf8;
 
@@ -332,13 +333,29 @@ if ( my $fn = undef_opt($opt->save_data) ) {
 sub error { # Die with optional sprintf and auto appended newline
   my $msg = shift;
   $msg = sprintf $msg, @_ if @_;
-  die $enc->encode($msg . "\n");
+  die term_encode($msg . "\n");
 }
 
 sub get_encoding {
   # We can't decode the value here so just lets hope it's ASCII safe!
   my($name) = @_;
   return find_encoding($name) // die "Unknown encoding: $name";
+}
+
+sub term_decode {
+  my $str = shift // return "";
+  return $enc->decode($str, Encode::FB_CROAK);
+}
+
+sub term_encode {
+  state $fallback = sub {
+    my($ord) = @_;
+    my $name = charnames::viacode($ord)
+      // sprintf 'U+%04X', $ord;
+    return $enc->encode("<$name>", Encode::FB_XMLCREF);
+  };
+  my $str = shift // return "";
+  return $enc->encode($str, $fallback);
 }
 
 sub squeeze { # Minimize whitespace, incl. remove newlines
@@ -371,16 +388,16 @@ sub ypp { # Lazily load and instantiate YAML::PP only once!
 # Prompt for a case-insensitive y/yes/n/no answer and return a boolean
 sub prompt_yn {
   state $yes_or_no = '(y[es]/n[o])';
-  state $yes = $enc->encode('y');
-  state $no = $enc->encode('n');
+  state $yes = term_encode('y');
+  state $no = term_encode('n');
   my($prompt, $default) = @_;
-  $prompt = $enc->encode("$prompt $yes_or_no");
+  $prompt = term_encode("$prompt $yes_or_no");
   $default = $default ? $yes : $no;
   my $answer = "";
   # Repeat prompt until we get a valid answer!
   while ($answer !~ m{^(?:y(?:es)?|no?)$}i ) {
     $answer = prompt $prompt, $default;
-    $answer = $enc->decode($answer // "");
+    $answer = term_decode($answer // "");
   }
   # Return a boolean
   return $answer =~ m{^y}i;
@@ -390,14 +407,14 @@ sub prompt_replace {
   my($line, $key, $data, $prompt_default, $prompt_echo) = @_;
   my $val = $data->{$key};
   if ( $prompt_default or !defined($val) ) {
-    my $prompt_key = $enc->encode("$key:");
-    my $prompt_default = defined($val) ? $enc->encode($val) : undef;
-    print $enc->encode($line) if $prompt_echo;
+    my $prompt_key = term_encode("$key:");
+    my $prompt_default = defined($val) ? term_encode($val) : undef;
+    print term_encode($line) if $prompt_echo;
     my $answer;
     # Repeat prompt until we get a useful value or exit
     until ( defined $answer ) {
       $answer = prompt $prompt_key, $prompt_default;
-      $answer = $enc->decode($answer // "");
+      $answer = term_decode($answer // "");
       # :a or :q means user wants to abort
       if ( $answer =~ m{^\:[aq]$}) {
         # Prompt for confirmation since abort means changes are
@@ -423,7 +440,7 @@ sub prompt_replace {
 sub prompt_overwrite {
   my($descr, $source, $dest) = @_;
   $dest // confess "No destination file name";
-  my $name = $enc->decode($dest);
+  my $name = term_decode($dest);
   for my $file ( $dest, $source ) {
     $file // next;
     $file = path($file)->realpath;
@@ -432,11 +449,11 @@ sub prompt_overwrite {
   if ($source eq $dest) {
     my $ok = prompt_yn("Really overwrite $descr $name?", 0);
     if ( $ok ) {
-      say $enc->encode("Overwriting $descr $name");
+      say term_encode("Overwriting $descr $name");
       return $dest;
     }
     else {
-      say $enc->encode("Discarding changes to $descr $name");
+      say term_encode("Discarding changes to $descr $name");
       return undef;
     }
   }
