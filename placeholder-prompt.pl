@@ -47,7 +47,7 @@ use Encode qw[find_encoding];
 use Path::Tiny qw[path];
 use IO::Prompt::Tiny qw[prompt];
 
-my $version = '20201119';
+my $version = '202011191140';
 
 sub error;
 
@@ -95,6 +95,17 @@ OPTIONS
 PRE_TEXT
 
   post_text => <<"POST_TEXT",
+
+ENCODINGS
+---------
+
+Note that while the terminal encoding is queried from the system, and
+can be set explicitly with the -e option if the automation fails,
+input and output files as well as any data files are assumed to be
+UTF-8 encoded. If this is not the case use a tool like iconv or
+(since you must have perl installed anyway to run $0) the Perl
+implementation piconv <https://perldoc.pl/piconv> which comes bundled
+with perl.
 
 IN PLACE EDITING
 ----------------
