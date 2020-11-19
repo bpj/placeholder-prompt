@@ -66,10 +66,10 @@ ENCODINGS
 Note that while the terminal encoding is queried from the system, and
 can be set explicitly with the -e option if the automation fails,
 input and output files as well as any data files are assumed to be
-UTF-8 encoded. If this is not the case use a tool like iconv or
+UTF-8 encoded. If this is not the case use a tool like iconv, or
 (since you must have perl installed anyway to run placeholder-prompt.pl) the Perl
 implementation piconv <https://perldoc.pl/piconv> which comes bundled
-with perl.
+with perl, to convert your files to UTF-8.
 
 IN PLACE EDITING
 ----------------
