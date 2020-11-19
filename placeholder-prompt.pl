@@ -40,13 +40,14 @@ use warnings;
 use warnings FATAL => 'utf8';
 use autodie;
 
+use Carp qw[confess];
 use Getopt::Long::Descriptive;
 use Term::Encoding qw[term_encoding];
 use Encode qw[find_encoding];
 use Path::Tiny qw[path];
 use IO::Prompt::Tiny qw[prompt];
 
-my $version = '202011182230';
+my $version = '20201119';
 
 sub error;
 
@@ -95,6 +96,16 @@ PRE_TEXT
 
   post_text => <<"POST_TEXT",
 
+IN PLACE EDITING
+----------------
+
+You may specify the same path for input/output file and/or for
+load/save data file. If this is the case you will be prompted for
+confirmation before overwriting the existing file. However you
+will NOT be prompted for confirmation before overwriting an
+existing file if the real paths to the source and destination
+file are different!
+
 ENVIRONMENT
 -----------
 
@@ -111,6 +122,7 @@ following enviroment variables (defaults shown in parentheses):
     - PH_PROMPT_RIGHT_DELIMITER ($default{right_delimiter})
     - PH_PROMPT_SAVE_DATA ($default{save_data})
     - PH_PROMPT_TERM_ENCODING ($default{term_encoding})
+      (The actual default is system dependent!)
 
 DEPENDENCIES
 ------------
@@ -142,6 +154,8 @@ This is free software, licensed under:
 
   The MIT (X11) License
 
+<http://www.opensource.org/licenses/mit-license.php>
+
 BUGS AND FEATURE REQUESTS
 -------------------------
 
@@ -160,6 +174,8 @@ This software is Copyright (c) 2020 by Benct Philip Jonsson.
 This is free software, licensed under:
 
   The MIT (X11) License
+
+<http://www.opensource.org/licenses/mit-license.php>
 
 VERSION_TEXT
 
@@ -183,7 +199,8 @@ my ( $opt, $usage ) = describe_options(
     +{ implies => +{ prompt_default => 0 }, },
   ],
   [ 'term-encoding|e=s',
-    "Terminal encoding. (Usually found automatically.)",
+    squeeze("Terminal encoding. (Usually found automatically,
+    i.e. the actual default is system dependent.)"),
     opt_default('term_encoding'),
   ],
   [ 'help|h' => "Show help text.", +{ shortcircuit => 1 }, ],
@@ -196,10 +213,11 @@ my ( $opt, $usage ) = describe_options(
     opt_default('key_regex'),
   ],
   [ 'load-data|y|l=s',
-    'Name of YAML or JSON file to load default data from.',
+    'Path to YAML or JSON file to load default data from.',
     opt_default('load_data'),
   ],
-  [ 'left-delimiter|L=s', "Left delimiter for placeholders.",
+  [ 'left-delimiter|L=s',
+    "Left delimiter for placeholders. NOT a regular expression!",
     opt_default('left_delimiter'),
   ],
   [ 'output-file|o=s', "Path to the output file.",
@@ -214,10 +232,11 @@ my ( $opt, $usage ) = describe_options(
     "Do not echo the line containing the placeholder when prompting.",
     +{ implies => +{ prompt_echo => 0 } },
   ],
-  [ 'right-delimiter|R=s', "Right delimiter for placeholders.",
+  [ 'right-delimiter|R=s',
+    "Right delimiter for placeholders.  NOT a regular expression!",
     opt_default('right_delimiter'),
   ],
-  [ 'save-data|Y|s=s', "Name of YAML file to save data to.",
+  [ 'save-data|Y|s=s', "Path to YAML file to save data to.",
     opt_default('save_data'),
   ],
   [ 'version|v', 'Show the program version.',
@@ -250,8 +269,8 @@ if ( $opt->term_encoding ne $term_encoding ) {
 }
 
 my($output_name) = undef_opt($opt->output_file);
-my($input_name) = undef_opt($opt->input_file);
-($input_name) = @ARGV unless defined $input_name;
+my($input_name) = @ARGV;
+$input_name = undef_opt($input_name //$opt->input_file);
 $output_name // error 'Output file name required';
 $input_name // error 'Input file name required';
 
@@ -285,61 +304,52 @@ for my $line ( @lines ) {
   }ge;
 }
 
-if ($input_name eq $output_name) {
-  my $name = $enc->decode($output_name);
-  my $write = prompt_yn("Really overwrite $name?", 0);
-  if ( $write ) {
-    say $enc->encode("Overwriting $name");
-    path($output_name)->spew_utf8(\@lines);
-  }
-  else {
-    say $enc->encode("Discarding changes");
-  }
-}
-else {
-  path($output_name)->spew_utf8(\@lines);
+# If input and output file is the same we prompt for confirmation
+# before we overwrite the existing contents
+if ( my $output = prompt_overwrite("input file", $input_name, $output_name) ) {
+  $output->spew_utf8(\@lines);
 }
 
 if ( my $fn = undef_opt($opt->save_data) ) {
-  if ( ($opt->load_data // "") eq $fn ) {
-    my $name = $enc->decode($fn);
-    my $write = prompt_yn("Really overwrite data in $name?", 0);
-    if ( $write ) {
-      say $enc->encode("Overwriting data in $name");
-      ypp()->dump_file($fn, $data);
-    }
-    else {
-      say $enc->encode("Discarding data changes");
-    }
-  }
-  else {
-    ypp()->dump_file($fn, $data);
+  # If data load and save file is the same we prompt for confirmation
+  # before we overwrite the existing contents
+  if ( my $save = prompt_overwrite("data file", undef_opt($opt->load_data), $fn)) {
+    ypp()->dump_file("$save", $data);
   }
 }
 
-sub error {
+sub error { # Die with optional sprintf and auto appended newline
   my $msg = shift;
   $msg = sprintf $msg, @_ if @_;
   die $enc->encode($msg . "\n");
 }
 
 sub get_encoding {
+  # We can't decode the value here so just lets hope it's ASCII safe!
   my($name) = @_;
   return find_encoding($name) // die "Unknown encoding: $name";
 }
 
-sub opt_default {
+sub squeeze { # Minimize whitespace, incl. remove newlines
+  my $str = shift // return "";
+  $str =~ s{\s+}{ }g;
+  $str =~ s{\A\s+}{};
+  $str =~ s{\s+\z}{};
+  return $str;
+}
+
+sub opt_default { # Because I can't be arsed to type this over and over!
   return +{ default => $default{$_[0]} };
 }
 
-sub undef_opt {
+sub undef_opt { # Treat the string 'undef' as undef!
   my($val) = @_;
   $val // return;
   return if 'undef' eq $val;
   return $val;
 }
 
-sub ypp {
+sub ypp { # Lazily load and instantiate YAML::PP only once!
   state $ypp = do {
     require YAML::PP;
     YAML::PP->new( schema => ['JSON'] );
@@ -347,6 +357,7 @@ sub ypp {
   return $ypp;
 }
 
+# Prompt for a case-insensitive y/yes/n/no answer and return a boolean
 sub prompt_yn {
   state $yes_or_no = '(y[es]/n[o])';
   state $yes = $enc->encode('y');
@@ -355,11 +366,12 @@ sub prompt_yn {
   $prompt = $enc->encode("$prompt $yes_or_no");
   $default = $default ? $yes : $no;
   my $answer = "";
+  # Repeat prompt until we get a valid answer!
   while ($answer !~ m{^(?:y(?:es)?|no?)$}i ) {
     $answer = prompt $prompt, $default;
-    $answer //= "";
-    $answer = $enc->decode($answer);
+    $answer = $enc->decode($answer // "");
   }
+  # Return a boolean
   return $answer =~ m{^y}i;
 }
 
@@ -371,13 +383,18 @@ sub prompt_replace {
     my $prompt_default = defined($val) ? $enc->encode($val) : undef;
     print $enc->encode($line) if $prompt_echo;
     my $answer;
+    # Repeat prompt until we get a useful value or exit
     until ( defined $answer ) {
       $answer = prompt $prompt_key, $prompt_default;
-      $answer = $enc->decode($answer);
+      $answer = $enc->decode($answer // "");
+      # :a or :q means user wants to abort
       if ( $answer =~ m{^\:[aq]$}) {
+        # Prompt for confirmation since abort means changes are
+        # discarded
         exit if prompt_yn('Really abort?', 0);
-        $answer = undef;
+        $answer = undef; # i.e. redo prompt unless we aborted
       }
+      # +ANSWER means replace the existing default
       elsif ( $answer =~ s{^\+}{} ) {
         $val = $data->{$key} = $answer;
       }
@@ -390,3 +407,27 @@ sub prompt_replace {
   return $val;
 }
 
+# Prompt for confirmation before overwriting an existing file
+# if the realpaths of the source and dest file are identical
+sub prompt_overwrite {
+  my($descr, $source, $dest) = @_;
+  $dest // confess "No destination file name";
+  my $name = $enc->decode($dest);
+  for my $file ( $dest, $source ) {
+    $file // next;
+    $file = path($file)->realpath;
+  }
+  return $dest unless defined($source) and $source->exists;
+  if ($source eq $dest) {
+    my $ok = prompt_yn("Really overwrite $descr $name?", 0);
+    if ( $ok ) {
+      say $enc->encode("Overwriting $descr $name");
+      return $dest;
+    }
+    else {
+      say $enc->encode("Discarding changes to $descr $name");
+      return undef;
+    }
+  }
+  return $dest;
+}

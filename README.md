@@ -29,7 +29,8 @@ OPTIONS
 	-D --no-prompt-default         Do not prompt for a replacement for
 	                               known keys.
 	-e STR --term-encoding STR     Terminal encoding. (Usually found
-	                               automatically.)
+	                               automatically, i.e. the actual default
+	                               is system dependent.)
 	                               (default value: utf-8)
 	-h --help                      Show help text.
 	-i STR --input-file STR        Path to the input file.
@@ -37,10 +38,11 @@ OPTIONS
 	-K STR --key-regex STR         Perl regular expression to match key
 	                               between delimiters in placeholders.
 	                               (default value: \w+)
-	-l STR -y STR --load-data STR  Name of YAML or JSON file to load
+	-l STR -y STR --load-data STR  Path to YAML or JSON file to load
 	                               default data from.
 	                               (default value: (undef))
-	-L STR --left-delimiter STR    Left delimiter for placeholders.
+	-L STR --left-delimiter STR    Left delimiter for placeholders. NOT a
+	                               regular expression!
 	                               (default value: $<)
 	-o STR --output-file STR       Path to the output file.
 	                               (default value: (undef))
@@ -50,12 +52,23 @@ OPTIONS
 	                               (default value: 1)
 	-P -E --no-prompt-echo         Do not echo the line containing the
 	                               placeholder when prompting.
-	-R STR --right-delimiter STR   Right delimiter for placeholders.
+	-R STR --right-delimiter STR   Right delimiter for placeholders.  NOT
+	                               a regular expression!
 	                               (default value: >)
-	-s STR -Y STR --save-data STR  Name of YAML file to save data to.
+	-s STR -Y STR --save-data STR  Path to YAML file to save data to.
 	                               (default value: (undef))
 	-v --version                   Show the program version.
 
+
+IN PLACE EDITING
+----------------
+
+You may specify the same path for input/output file and/or for
+load/save data file. If this is the case you will be prompted for
+confirmation before overwriting the existing file. However you
+will NOT be prompted for confirmation before overwriting an
+existing file if the real paths to the source and destination
+file are different!
 
 ENVIRONMENT
 -----------
@@ -73,6 +86,7 @@ following enviroment variables (defaults shown in parentheses):
     - PH_PROMPT_RIGHT_DELIMITER (>)
     - PH_PROMPT_SAVE_DATA (undef)
     - PH_PROMPT_TERM_ENCODING (utf-8)
+      (The actual default is system dependent!)
 
 DEPENDENCIES
 ------------
@@ -103,6 +117,8 @@ This software is Copyright (c) 2020 by Benct Philip Jonsson.
 This is free software, licensed under:
 
   The MIT (X11) License
+
+<http://www.opensource.org/licenses/mit-license.php>
 
 BUGS AND FEATURE REQUESTS
 -------------------------
